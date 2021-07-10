@@ -2,6 +2,7 @@ class Trade:
     num_trades = 0
 
     def __init__(self, buyer, seller, price, volume) -> None:
+        assert volume > 0
         self.buyer = buyer
         self.seller = seller
         self.price = price
