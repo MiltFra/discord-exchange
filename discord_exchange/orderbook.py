@@ -13,7 +13,7 @@ class Orderbook:
         self.total_bid_volume = 0
         self.total_ask_volume = 0
 
-    def insert_bid(self, buyer, bid_price, bid_volume):
+    def insert_bid(self, buyer, bid_price, bid_volume) -> list[Trade]:
         if self.bids.get(bid_price, None):
             self._insert_bid_no_trade(buyer, bid_price, bid_volume)
             return []
@@ -35,14 +35,14 @@ class Orderbook:
             self._insert_bid_no_trade(buyer, bid_price, bid_volume)
         return trades
 
-    def _insert_bid_no_trade(self, buyer, bid_price, bid_volume):
+    def _insert_bid_no_trade(self, buyer, bid_price, bid_volume) -> None:
         bids_at_price = self.bids.get(bid_price, deque())
         bids_at_price.append((buyer, bid_price, bid_volume))
         self.total_bid_volume += bid_volume
         self.bids[bid_price] = bids_at_price
         self.bid_prices.put(-bid_price)
 
-    def insert_ask(self, seller, ask_price, ask_volume):
+    def insert_ask(self, seller, ask_price, ask_volume) -> list[Trade]:
         if self.asks.get(ask_price, None):
             self._insert_ask_no_trade(seller, ask_price, ask_volume)
             return []
@@ -64,7 +64,7 @@ class Orderbook:
             self._insert_ask_no_trade(seller, ask_price, ask_volume)
         return trades
 
-    def _insert_ask_no_trade(self, seller, ask_price, ask_volume):
+    def _insert_ask_no_trade(self, seller, ask_price, ask_volume) -> None:
         asks_at_price = self.asks.get(ask_price, deque())
         asks_at_price.append((seller, ask_price, ask_volume))
         self.total_ask_volume += ask_volume
