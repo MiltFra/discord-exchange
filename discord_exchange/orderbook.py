@@ -7,13 +7,18 @@ from discord_exchange.order import Order
 
 
 class Orderbook:
-    def __init__(self) -> None:
+    def __init__(self, volume_limit=10) -> None:
         self.bid_prices = PriorityQueue()
         self.ask_prices = PriorityQueue()
         self.bids = dict()
         self.asks = dict()
         self.total_bid_volume = 0
         self.total_ask_volume = 0
+        self.bids_per_issuer = dict()
+        self.asks_per_issuer = dict()
+        self.bid_volume_per_issuer = dict()
+        self.ask_volume_per_issuer = dict()
+        self.volume_limit = volume_limit
 
     def insert_bid(self, buyer: int, price: float, volume: int) -> list[Trade]:
         assert price >= 0
@@ -30,7 +35,7 @@ class Orderbook:
                 break
             trade_volume = min(ask.volume, bid.volume)
             trades.append(
-                Trade(bid.issued_by, ask.issued_by, ask.price, trade_volume))
+                Trade(bid.issuer, ask.issuer, ask.price, trade_volume))
             self.total_ask_volume -= trade_volume
             bid.reduce_volume(trade_volume)
             ask.reduce_volume(trade_volume)
@@ -44,11 +49,32 @@ class Orderbook:
     def _insert_bid_no_trade(self, bid: Order) -> None:
         bids_at_price = self.bids.get(bid.price, deque())
         bids_at_price.append(bid)
+        bids_by_issuer = self.bids_per_issuer.get(bid.issuer, deque())
+        bids_by_issuer.append(bid)
+        self.bids_per_issuer[bid.issuer] = bids_by_issuer
         self.total_bid_volume += bid.volume
         self.bids[bid.price] = bids_at_price
         # We want to sort bid prices in descending order so we need
         # to store their additive inverses
         self.bid_prices.put(-bid.price)
+
+        self.bid_volume_per_issuer[
+            bid.issuer] = bid.volume + self.bid_volume_per_issuer.get(
+                bid.issuer, 0)
+        if self.bid_volume_per_issuer[bid.issuer] > self.volume_limit:
+            self._remove_excess_bids(bid.issuer)
+
+    def _remove_excess_bids(self, issuer: int) -> None:
+        while (bid_volume_by_issuer :=
+               self.bid_volume_per_issuer[issuer]) > self.volume_limit:
+            bids_by_issuer = self.bids_per_issuer.get(issuer, deque())
+            assert bids_by_issuer
+            volume_delta = min(bids_by_issuer[0].volume,
+                               bid_volume_by_issuer - self.volume_limit)
+            self.bid_volume_per_issuer[issuer] -= volume_delta
+            bids_by_issuer[0].reduce_volume(volume_delta)
+            if bids_by_issuer[0].volume == 0:
+                bids_by_issuer.popleft()
 
     def insert_ask(self, seller: int, price: float,
                    volume: int) -> list[Trade]:
@@ -66,7 +92,7 @@ class Orderbook:
                 break
             trade_volume = min(ask.volume, bid.volume)
             trades.append(
-                Trade(bid.issued_by, ask.issued_by, bid.price, trade_volume))
+                Trade(bid.issuer, ask.issuer, bid.price, trade_volume))
             self.total_bid_volume -= trade_volume
             bid.reduce_volume(trade_volume)
             ask.reduce_volume(trade_volume)
@@ -80,9 +106,30 @@ class Orderbook:
     def _insert_ask_no_trade(self, ask: Order) -> None:
         asks_at_price = self.asks.get(ask.price, deque())
         asks_at_price.append(ask)
+        asks_by_issuer = self.asks_per_issuer.get(ask.issuer, deque())
+        asks_by_issuer.append(ask)
+        self.asks_per_issuer[ask.issuer] = asks_by_issuer
         self.total_ask_volume += ask.volume
         self.asks[ask.price] = asks_at_price
         self.ask_prices.put(ask.price)
+
+        self.ask_volume_per_issuer[
+            ask.issuer] = ask.volume + self.ask_volume_per_issuer.get(
+                ask.issuer, 0)
+        if self.ask_volume_per_issuer[ask.issuer] > self.volume_limit:
+            self._remove_excess_asks(ask.issuer)
+
+    def _remove_excess_asks(self, issuer: int):
+        while (ask_volume_by_issuer :=
+               self.ask_volume_per_issuer[issuer]) > self.volume_limit:
+            asks_by_issuer = self.asks_per_issuer.get(issuer, deque())
+            assert asks_by_issuer
+            volume_delta = min(asks_by_issuer[0].volume,
+                               ask_volume_by_issuer - self.volume_limit)
+            self.ask_volume_per_issuer[issuer] -= volume_delta
+            asks_by_issuer[0].reduce_volume(volume_delta)
+            if asks_by_issuer[0].volume == 0:
+                asks_by_issuer.popleft()
 
     def best_ask(self) -> Order:
         while (price := self._peek_ask_prices()) is not None:

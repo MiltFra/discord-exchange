@@ -9,7 +9,7 @@ class Order:
 
     def __init__(self, order_type, issuer, price, volume) -> None:
         self.type = order_type
-        self.issued_by = issuer
+        self.issuer = issuer
         self.price = price
         self.volume = volume
         self._register_update()
