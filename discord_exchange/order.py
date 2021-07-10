@@ -20,7 +20,7 @@ class Order:
         self._register_update()
 
     def reduce_volume(self, volume_delta) -> None:
-        assert volume_delta <= self.volume
+        assert 0 < volume_delta <= self.volume
         self.volume -= volume_delta
         self._register_update()
 
