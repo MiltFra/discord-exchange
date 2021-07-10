@@ -1,7 +1,9 @@
 from queue import PriorityQueue
 from collections import deque
 from typing import Deque
+from discord_exchange import trade
 from discord_exchange.trade import Trade
+from discord_exchange.order import Order
 
 
 class Orderbook:
@@ -13,90 +15,105 @@ class Orderbook:
         self.total_bid_volume = 0
         self.total_ask_volume = 0
 
-    def insert_bid(self, buyer, bid_price, bid_volume) -> list[Trade]:
-        if self.bids.get(bid_price, None):
-            self._insert_bid_no_trade(buyer, bid_price, bid_volume)
+    def insert_bid(self, buyer: int, price: float, volume: int) -> list[Trade]:
+        assert price >= 0
+        assert volume > 0
+        bid = Order(Order.TYPE_BID, buyer, price, volume)
+        if self.bids.get(bid.price, None):
+            self._insert_bid_no_trade(bid)
             return []
         trades = []
-        while bid_volume and self.total_ask_volume:
-            seller, ask_price, ask_volume = self.best_ask()
-            if ask_price > bid_price:
+        while bid.volume and self.total_ask_volume:
+            ask = self.best_ask()
+            assert ask is not None
+            if ask.price > bid.price:
                 break
-            trade_volume = min(ask_volume, bid_volume)
-            trades.append(Trade(buyer, seller, ask_price, trade_volume))
+            trade_volume = min(ask.volume, bid.volume)
+            trades.append(
+                Trade(bid.issued_by, ask.issued_by, ask.price, trade_volume))
             self.total_ask_volume -= trade_volume
-            bid_volume -= trade_volume
-            ask_volume -= trade_volume
-            asks = self.asks.get(ask_price, deque())
-            asks.popleft()
-            if ask_volume:
-                asks.appendleft((seller, ask_price, ask_volume))
-        if bid_volume:
-            self._insert_bid_no_trade(buyer, bid_price, bid_volume)
+            bid.reduce_volume(trade_volume)
+            ask.reduce_volume(trade_volume)
+            asks_at_price = self.asks.get(ask.price, deque())
+            if ask.volume == 0:
+                asks_at_price.popleft()
+        if bid.volume:
+            self._insert_bid_no_trade(bid)
         return trades
 
-    def _insert_bid_no_trade(self, buyer, bid_price, bid_volume) -> None:
-        bids_at_price = self.bids.get(bid_price, deque())
-        bids_at_price.append((buyer, bid_price, bid_volume))
-        self.total_bid_volume += bid_volume
-        self.bids[bid_price] = bids_at_price
-        self.bid_prices.put(-bid_price)
+    def _insert_bid_no_trade(self, bid: Order) -> None:
+        bids_at_price = self.bids.get(bid.price, deque())
+        bids_at_price.append(bid)
+        self.total_bid_volume += bid.volume
+        self.bids[bid.price] = bids_at_price
+        # We want to sort bid prices in descending order so we need
+        # to store their additive inverses
+        self.bid_prices.put(-bid.price)
 
-    def insert_ask(self, seller, ask_price, ask_volume) -> list[Trade]:
-        if self.asks.get(ask_price, None):
-            self._insert_ask_no_trade(seller, ask_price, ask_volume)
+    def insert_ask(self, seller: int, price: float,
+                   volume: int) -> list[Trade]:
+        assert price >= 0
+        assert volume > 0
+        ask = Order(Order.TYPE_ASK, seller, price, volume)
+        if self.asks.get(ask.price, None):
+            self._insert_ask_no_trade(ask)
             return []
         trades = []
-        while ask_volume and self.total_bid_volume:
-            buyer, bid_price, bid_volume = self.best_bid()
-            if ask_price > bid_price:
+        while ask.volume and self.total_bid_volume:
+            bid = self.best_bid()
+            assert bid is not None
+            if ask.price > bid.price:
                 break
-            trade_volume = min(ask_volume, bid_volume)
-            trades.append(Trade(buyer, seller, bid_price, trade_volume))
+            trade_volume = min(ask.volume, bid.volume)
+            trades.append(
+                Trade(bid.issued_by, ask.issued_by, bid.price, trade_volume))
             self.total_bid_volume -= trade_volume
-            bid_volume -= trade_volume
-            ask_volume -= trade_volume
-            bids = self.bids.get(bid_price, deque())
-            bids.popleft()
-            if bid_volume:
-                bids.appendleft((buyer, bid_price, bid_volume))
-        if ask_volume:
-            self._insert_ask_no_trade(seller, ask_price, ask_volume)
+            bid.reduce_volume(trade_volume)
+            ask.reduce_volume(trade_volume)
+            bids_at_price = self.bids.get(bid.price, deque())
+            if bid.volume == 0:
+                bids_at_price.popleft()
+        if ask.volume:
+            self._insert_ask_no_trade(ask)
         return trades
 
-    def _insert_ask_no_trade(self, seller, ask_price, ask_volume) -> None:
-        asks_at_price = self.asks.get(ask_price, deque())
-        asks_at_price.append((seller, ask_price, ask_volume))
-        self.total_ask_volume += ask_volume
-        self.asks[ask_price] = asks_at_price
-        self.ask_prices.put(ask_price)
+    def _insert_ask_no_trade(self, ask: Order) -> None:
+        asks_at_price = self.asks.get(ask.price, deque())
+        asks_at_price.append(ask)
+        self.total_ask_volume += ask.volume
+        self.asks[ask.price] = asks_at_price
+        self.ask_prices.put(ask.price)
 
-    def best_ask(self) -> tuple:
-        while (price := self.best_ask_price()) is not None:
+    def best_ask(self) -> Order:
+        while (price := self._peek_ask_prices()) is not None:
             asks_at_price = self.asks.get(price, deque())
+            while asks_at_price and not asks_at_price[0].volume:
+                self.ask_prices.popleft()
             if asks_at_price:
                 return asks_at_price[0]
             else:
                 self.ask_prices.get()
         return None
 
-    def best_ask_price(self) -> float:
+    def _peek_ask_prices(self) -> float:
         try:
             with self.ask_prices.mutex:
                 return self.ask_prices.queue[0]
         except IndexError:
             return None
 
-    def best_bid(self) -> tuple:
-        while (price := self.best_bid_price()) is not None:
+    def best_bid(self) -> Order:
+        while (price := self._peek_bid_prices()) is not None:
             bids_at_price = self.bids.get(price, deque())
+            while bids_at_price and not bids_at_price[0].volume:
+                bids_at_price.popleft()
             if bids_at_price:
                 return bids_at_price[0]
             else:
                 self.bid_prices.get()
         return None
 
-    def best_bid_price(self) -> float:
+    def _peek_bid_prices(self) -> float:
         try:
             with self.bid_prices.mutex:
                 return -self.bid_prices.queue[0]
