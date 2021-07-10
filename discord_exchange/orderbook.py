@@ -125,7 +125,7 @@ class Orderbook:
         raw_orders = map(lambda x: orders.get(x, deque()), prices)
         raw_volumes = []
         for order_list in raw_orders:
-            raw_volumes.append(sum(map(lambda x: x[2], order_list)))
+            raw_volumes.append(sum(map(lambda ord: ord.volume, order_list)))
         return list(filter(lambda x: x[1], zip(prices, raw_volumes)))
 
     def __str__(self) -> str:
@@ -133,4 +133,5 @@ class Orderbook:
                                 reverse=True)
         asks_per_price = sorted(self.find_orders_per_price(self.asks))
         price_volume_to_string = lambda x: f"{x[1]}@{x[0]}"
-        return f"ASK: {', '.join(map(price_volume_to_string, asks_per_price))}\nBID: {', '.join(map(price_volume_to_string, bids_per_price))}"
+        return f"ASK: {', '.join(map(price_volume_to_string, asks_per_price))}\n" \
+            f"BID: {', '.join(map(price_volume_to_string, bids_per_price))}"
