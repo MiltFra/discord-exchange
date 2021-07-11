@@ -17,7 +17,7 @@ class Trade:
             return self.volume
         return 0
 
-    def true_value(self, theo):
+    def proportional_value(self, theo):
         return self.volume * (theo - self.price)
 
     def __str__(self) -> str:

@@ -38,9 +38,9 @@ class TradeTest(unittest.TestCase):
         self.assertEqual(t.price, 5)
         self.assertEqual(t.volume, 10)
 
-        self.assertEqual(t.true_value(5), 0)
-        self.assertEqual(t.true_value(7), 20)
-        self.assertEqual(t.true_value(3), -20)
+        self.assertEqual(t.proportional_value(5), 0)
+        self.assertEqual(t.proportional_value(7), 20)
+        self.assertEqual(t.proportional_value(3), -20)
 
     @unittest.expectedFailure
     def test_zero_volume(self):
