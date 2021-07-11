@@ -7,9 +7,9 @@ class Order:
     TYPE_BID = 0
     TYPE_ASK = 1
 
-    def __init__(self, order_type, issuer, price, volume) -> None:
+    def __init__(self, order_type, user, price, volume) -> None:
         self.type = order_type
-        self.issuer = issuer
+        self.user_id = user
         self.price = price
         self.volume = volume
         self._register_update()
