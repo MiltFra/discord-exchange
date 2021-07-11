@@ -26,21 +26,27 @@ class UserData:
 
     def remove_excess_bids(self):
         assert self.bids
+        total_volume_delta = 0
         while self.bid_volume > self.bid_limit():
             volume_delta = min(self.bids[0].volume, self.bid_volume_delta())
             self.bid_volume -= volume_delta
             self.bids[0].reduce_volume(volume_delta)
+            total_volume_delta += volume_delta
             if self.bids[0].volume == 0:
                 self.bids.popleft()
+        return total_volume_delta
 
     def remove_excess_asks(self):
         assert self.asks
+        total_volume_delta = 0
         while self.ask_volume > self.ask_limit():
             volume_delta = min(self.asks[0].volume, self.ask_volume_delta())
             self.ask_volume -= volume_delta
             self.asks[0].reduce_volume(volume_delta)
+            total_volume_delta += volume_delta
             if self.asks[0].volume == 0:
                 self.asks.popleft()
+        return total_volume_delta
 
     def register_trade(self, trade: Trade):
         if trade.seller == self.identifier:

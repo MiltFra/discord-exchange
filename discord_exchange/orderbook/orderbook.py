@@ -7,7 +7,7 @@ from discord_exchange.orderbook.order import Order
 
 
 class Orderbook:
-    def __init__(self, volume_limit=10) -> None:
+    def __init__(self, position_limit=10) -> None:
         self.bid_prices = PriorityQueue()
         self.ask_prices = PriorityQueue()
         self.bids = dict()
@@ -15,14 +15,14 @@ class Orderbook:
         self.total_bid_volume = 0
         self.total_ask_volume = 0
         self.users = dict()
-        self.volume_limit = volume_limit
+        self.position_limit = position_limit
 
     def insert_bid(self, buyer_id: int, price: float,
                    volume: int) -> list[Trade]:
         assert price >= 0
         assert volume > 0
         bid = Order(Order.TYPE_BID, buyer_id, price, volume)
-        if self.bids.get(bid.price, None):
+        if self.get_bids_at_price(bid.price):
             self._insert_bid_no_trade(bid)
             return []
         trades = []
@@ -47,7 +47,7 @@ class Orderbook:
 
     def get_user(self, user: int) -> UserData:
         # avoids constructing the object when not required
-        user_maker = lambda: UserData(user)
+        user_maker = lambda: UserData(user, position_limit=self.position_limit)
         return self._get_or_set_default(self.users, user, user_maker)
 
     def get_bids_at_price(self, price: int) -> deque[Order]:
@@ -68,12 +68,11 @@ class Orderbook:
         user = self.get_user(bid.user_id)
         user.bids.append(bid)
         user.bid_volume += bid.volume
-        self.total_bid_volume += bid.volume
         # We want to sort bid prices in descending order so we need
         # to store their additive inverses
         self.bid_prices.put(-bid.price)
 
-        user.remove_excess_bids()
+        self.total_bid_volume += bid.volume - user.remove_excess_bids()
 
     def insert_ask(self, seller: int, price: float,
                    volume: int) -> list[Trade]:
@@ -119,16 +118,15 @@ class Orderbook:
         user = self.get_user(ask.user_id)
         user.asks.append(ask)
         user.ask_volume += ask.volume
-        self.total_ask_volume += ask.volume
         self.ask_prices.put(ask.price)
 
-        user.remove_excess_asks()
+        self.total_ask_volume += ask.volume - user.remove_excess_asks()
 
     def best_ask(self) -> Order:
         while (price := self._peek_ask_prices()) is not None:
             asks_at_price = self.asks.get(price, deque())
             while asks_at_price and not asks_at_price[0].volume:
-                self.ask_prices.popleft()
+                asks_at_price.popleft()
             if asks_at_price:
                 return asks_at_price[0]
             else:
