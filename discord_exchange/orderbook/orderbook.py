@@ -2,7 +2,7 @@ from discord_exchange.orderbook.user_data import UserData
 from queue import PriorityQueue
 from collections import deque
 from typing import Deque
-from discord_exchange.trade import Trade
+from discord_exchange.orderbook.trade import Trade
 from discord_exchange.orderbook.order import Order
 
 
@@ -17,10 +17,11 @@ class Orderbook:
         self.users = dict()
         self.volume_limit = volume_limit
 
-    def insert_bid(self, buyer: int, price: float, volume: int) -> list[Trade]:
+    def insert_bid(self, buyer_id: int, price: float,
+                   volume: int) -> list[Trade]:
         assert price >= 0
         assert volume > 0
-        bid = Order(Order.TYPE_BID, buyer, price, volume)
+        bid = Order(Order.TYPE_BID, buyer_id, price, volume)
         if self.bids.get(bid.price, None):
             self._insert_bid_no_trade(bid)
             return []
@@ -31,14 +32,15 @@ class Orderbook:
             if ask.price > bid.price:
                 break
             trade_volume = min(ask.volume, bid.volume)
-            trades.append(
-                Trade(bid.user_id, ask.user_id, ask.price, trade_volume))
+            trade = Trade(bid.user_id, ask.user_id, ask.price, trade_volume)
+            trades.append(trade)
             self.total_ask_volume -= trade_volume
             bid.reduce_volume(trade_volume)
             ask.reduce_volume(trade_volume)
-            asks_at_price = self.asks.get(ask.price, deque())
+            self.get_user(bid.user_id).register_trade(trade)
+            self.get_user(ask.user_id).register_trade(trade)
             if ask.volume == 0:
-                asks_at_price.popleft()
+                self._remove_empty_bids(ask.price)
         if bid.volume:
             self._insert_bid_no_trade(bid)
         return trades
@@ -88,21 +90,28 @@ class Orderbook:
             if ask.price > bid.price:
                 break
             trade_volume = min(ask.volume, bid.volume)
-            trades.append(
-                Trade(bid.user_id, ask.user_id, bid.price, trade_volume))
+            trade = Trade(bid.user_id, ask.user_id, bid.price, trade_volume)
+            trades.append(trade)
             self.total_bid_volume -= trade_volume
             bid.reduce_volume(trade_volume)
             ask.reduce_volume(trade_volume)
+            self.get_user(bid.user_id).register_trade(trade)
+            self.get_user(ask.user_id).register_trade(trade)
             if bid.volume == 0:
-                self._remove_empty_orders(bid.price)
+                self._remove_empty_asks(bid.price)
         if ask.volume:
             self._insert_ask_no_trade(ask)
         return trades
 
-    def _remove_empty_orders(self, price: int) -> None:
+    def _remove_empty_bids(self, price: int) -> None:
         bids_at_price = self.get_bids_at_price(price)
         while bids_at_price and bids_at_price[0].volume == 0:
             bids_at_price.popleft()
+
+    def _remove_empty_asks(self, price: int) -> None:
+        asks_at_price = self.get_asks_at_price(price)
+        while asks_at_price and asks_at_price[0].volume == 0:
+            asks_at_price.popleft()
 
     def _insert_ask_no_trade(self, ask: Order) -> None:
         asks_at_price = self.get_asks_at_price(ask.price)
